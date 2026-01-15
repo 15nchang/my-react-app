@@ -28,6 +28,42 @@ app.get('/api/items', async (req, res) => {
   }
 });
 
+app.get('/api/items/search', async (req, res) => {
+  const { q } = req.query;
+  if (!q || typeof q !== 'string') {
+    return res.status(400).json({ error: 'Query parameter "q" is required' });
+  }
+  try {
+    const query = q.trim();
+    // Check if query is a number (item ID search)
+    const isNumeric = /^\d+$/.test(query);
+    let result;
+    if (isNumeric) {
+      // Search by ID or content
+      result = await db.query(
+        `SELECT id, title, description, created_at, file_location, processing, status 
+         FROM items 
+         WHERE id = $1 OR title ILIKE $2 OR description ILIKE $2
+         ORDER BY created_at DESC`,
+        [parseInt(query, 10), `%${query}%`]
+      );
+    } else {
+      // Search by content only
+      result = await db.query(
+        `SELECT id, title, description, created_at, file_location, processing, status 
+         FROM items 
+         WHERE title ILIKE $1 OR description ILIKE $1
+         ORDER BY created_at DESC`,
+        [`%${query}%`]
+      );
+    }
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('GET /api/items/search error', err);
+    return res.status(500).json({ error: 'Search failed' });
+  }
+});
+
 app.post('/api/items', async (req, res) => {
   const { title, description } = req.body || {};
   if (!title || typeof title !== 'string' || !title.trim()) {
