@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { listItems } from '../api'
 import type { Item } from '../api'
 
@@ -28,6 +29,11 @@ export default function ListItems() {
             <h3>{it.title}</h3>
             <div className="item-meta">{new Date(it.created_at).toLocaleString()}</div>
             {it.description && <p>{it.description}</p>}
+            {it.file_location && (
+              <p style={{ marginTop: 8 }}>
+                <Link to={`/items/${it.id}`}>View details.</Link>
+              </p>
+            )}
           </article>
         ))}
       </div>

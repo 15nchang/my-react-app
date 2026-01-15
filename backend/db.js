@@ -16,6 +16,11 @@ async function init() {
     description TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
   )`);
+  // ensure file_location column exists for uploaded files
+  await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS file_location TEXT`);
+  // ensure processing/status columns for background work
+  await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS processing BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS status TEXT`);
 }
 
 init().catch((err) => console.error('DB init error', err));

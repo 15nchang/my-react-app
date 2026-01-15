@@ -3,6 +3,7 @@ import './App.css'
 import CreateItem from './pages/CreateItem'
 import ListItems from './pages/ListItems'
 import UploadDocument from './pages/UploadDocument'
+import ItemDetails from './pages/ItemDetails'
 
 function App() {
   return (
@@ -36,6 +37,7 @@ function App() {
           <Route path="/" element={<ListItems />} />
           <Route path="/create" element={<CreateItem />} />
           <Route path="/upload" element={<UploadDocument />} />
+          <Route path="/items/:id" element={<ItemDetails />} />
         </Routes>
       </main>
     </div>
