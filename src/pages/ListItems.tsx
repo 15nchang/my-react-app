@@ -5,37 +5,42 @@ import type { Item } from '../api'
 
 export default function ListItems() {
   const [items, setItems] = useState<Item[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     setLoading(true)
-    listItems()
-      .then((data) => setItems(data))
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false))
-  }, [])
-
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query)
-    if (!query.trim()) {
-      // If search is cleared, reload all items
-      setLoading(true)
-      listItems()
-        .then((data) => setItems(data))
+    if (searchQuery.trim()) {
+      searchItems(searchQuery, page)
+        .then((data) => {
+          setItems(data.items)
+          setTotal(data.total)
+        })
         .catch((err) => setError(String(err)))
         .finally(() => setLoading(false))
-      return
+    } else {
+      listItems(page)
+        .then((data) => {
+          setItems(data.items)
+          setTotal(data.total)
+        })
+        .catch((err) => setError(String(err)))
+        .finally(() => setLoading(false))
     }
-    // Execute search
-    setLoading(true)
-    setError(null)
-    searchItems(query)
-      .then((data) => setItems(data))
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false))
+  }, [page, searchQuery])
+
+  const handleSearch = (query: string) => {
+    setSearchQuery(query)
+    setPage(0)
   }
+
+  const limit = 10
+  const totalPages = Math.ceil(total / limit)
+  const canPrevious = page > 0
+  const canNext = page < totalPages - 1
 
   return (
     <section>
@@ -75,6 +80,28 @@ export default function ListItems() {
           )
         })}
       </div>
+
+      {totalPages > 1 && (
+        <div style={{ marginTop: 20, display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
+          <button
+            onClick={() => setPage(p => p - 1)}
+            disabled={!canPrevious}
+            className="btn"
+            style={{ opacity: canPrevious ? 1 : 0.5, cursor: canPrevious ? 'pointer' : 'not-allowed' }}
+          >
+            ← Previous
+          </button>
+          <span style={{ color: '#888' }}>Page {page + 1} of {totalPages}</span>
+          <button
+            onClick={() => setPage(p => p + 1)}
+            disabled={!canNext}
+            className="btn"
+            style={{ opacity: canNext ? 1 : 0.5, cursor: canNext ? 'pointer' : 'not-allowed' }}
+          >
+            Next →
+          </button>
+        </div>
+      )}
     </section>
   )
 }

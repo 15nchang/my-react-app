@@ -10,8 +10,8 @@ export type Item = {
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 
-export async function listItems(): Promise<Item[]> {
-  const res = await fetch(`${API_BASE}/api/items`)
+export async function listItems(page: number = 0): Promise<{ items: Item[]; total: number; page: number; limit: number }> {
+  const res = await fetch(`${API_BASE}/api/items?page=${page}`)
   if (!res.ok) throw new Error('Failed to fetch items')
   return res.json()
 }
@@ -50,8 +50,8 @@ export async function getItem(id: number) {
   return res.json()
 }
 
-export async function searchItems(query: string): Promise<Item[]> {
-  const res = await fetch(`${API_BASE}/api/items/search?q=${encodeURIComponent(query)}`)
+export async function searchItems(query: string, page: number = 0): Promise<{ items: Item[]; total: number; page: number; limit: number }> {
+  const res = await fetch(`${API_BASE}/api/items/search?q=${encodeURIComponent(query)}&page=${page}`)
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || 'Search failed')

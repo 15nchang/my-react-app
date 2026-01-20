@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
 const db = require('./db');
+const es = require('./elasticsearch');
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
@@ -18,10 +19,16 @@ const BACKEND_URL = process.env.BACKEND_URL || ''
 
 app.get('/api/items', async (req, res) => {
   try {
+    const page = parseInt(req.query.page || '0', 10);
+    const limit = 10;
+    const offset = page * limit;
     const result = await db.query(
-      'SELECT id, title, description, created_at, file_location, processing, status FROM items ORDER BY created_at DESC'
+      'SELECT id, title, description, created_at, file_location, processing, status FROM items ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+      [limit, offset]
     );
-    return res.json(result.rows);
+    const countResult = await db.query('SELECT COUNT(*) as total FROM items');
+    const total = parseInt(countResult.rows[0].total, 10);
+    return res.json({ items: result.rows, total, page, limit });
   } catch (err) {
     console.error('GET /api/items error', err);
     return res.status(500).json({ error: 'Failed to fetch items' });
@@ -29,35 +36,18 @@ app.get('/api/items', async (req, res) => {
 });
 
 app.get('/api/items/search', async (req, res) => {
-  const { q } = req.query;
+  const { q, page } = req.query;
   if (!q || typeof q !== 'string') {
     return res.status(400).json({ error: 'Query parameter "q" is required' });
   }
   try {
     const query = q.trim();
-    // Check if query is a number (item ID search)
-    const isNumeric = /^\d+$/.test(query);
-    let result;
-    if (isNumeric) {
-      // Search by ID or content
-      result = await db.query(
-        `SELECT id, title, description, created_at, file_location, processing, status 
-         FROM items 
-         WHERE id = $1 OR title ILIKE $2 OR description ILIKE $2
-         ORDER BY created_at DESC`,
-        [parseInt(query, 10), `%${query}%`]
-      );
-    } else {
-      // Search by content only
-      result = await db.query(
-        `SELECT id, title, description, created_at, file_location, processing, status 
-         FROM items 
-         WHERE title ILIKE $1 OR description ILIKE $1
-         ORDER BY created_at DESC`,
-        [`%${query}%`]
-      );
-    }
-    return res.json(result.rows);
+    const pageNum = parseInt(page || '0', 10);
+    const limit = 10;
+    
+    // Use Elasticsearch for search
+    const { items, total } = await es.searchItems(query, pageNum, limit);
+    return res.json({ items, total, page: pageNum, limit });
   } catch (err) {
     console.error('GET /api/items/search error', err);
     return res.status(500).json({ error: 'Search failed' });
@@ -74,7 +64,10 @@ app.post('/api/items', async (req, res) => {
       'INSERT INTO items (title, description, file_location) VALUES ($1, $2, $3) RETURNING id, title, description, created_at, file_location',
       [title.trim(), description || null, null]
     );
-    return res.status(201).json(result.rows[0]);
+    const item = result.rows[0];
+    // Index in Elasticsearch
+    await es.indexItem(item);
+    return res.status(201).json(item);
   } catch (err) {
     console.error('POST /api/items error', err);
     return res.status(500).json({ error: 'Failed to create item' });
@@ -96,6 +89,8 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       [title || req.file.originalname, null, fileLocation, true, 'queued']
     )
     created = insert.rows[0]
+    // Index placeholder in Elasticsearch
+    await es.indexItem(created)
   } catch (err) {
     console.error('DB insert placeholder error', err)
     return res.status(500).json({ error: 'Failed to save upload placeholder' })
@@ -133,6 +128,13 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       if (extracted.length > 100000) extracted = extracted.slice(0, 100000) + '\n\n[truncated]'
 
       await db.query('UPDATE items SET description=$1, processing=$2, status=$3 WHERE id=$4', [extracted, false, 'done', created.id])
+      
+      // Update Elasticsearch index
+      await es.updateItem(created.id, {
+        description: extracted,
+        processing: false,
+        status: 'done'
+      })
     } catch (err) {
       console.error('Background extraction error', err && err.message ? err.message : err)
       try {
@@ -166,4 +168,8 @@ app.get('/api/items/:id', async (req, res) => {
   }
 })
 const port = process.env.PORT || 4000;
-app.listen(port, () => console.log(`Backend listening on ${port}`));
+
+// Initialize Elasticsearch index
+es.initIndex().then(() => {
+  app.listen(port, () => console.log(`Backend listening on ${port}`));
+});
