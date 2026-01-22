@@ -1,41 +1,25 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { listItems, searchItems } from '../api'
+import { listItems } from '../api'
 import type { Item } from '../api'
 
-export default function ListItems() {
+export default function Action() {
   const [items, setItems] = useState<Item[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const [total, setTotal] = useState(0)
 
   useEffect(() => {
     setLoading(true)
-    if (searchQuery.trim()) {
-      searchItems(searchQuery, page)
-        .then((data) => {
-          setItems(data.items)
-          setTotal(data.total)
-        })
-        .catch((err) => setError(String(err)))
-        .finally(() => setLoading(false))
-    } else {
-      listItems(page)
-        .then((data) => {
-          setItems(data.items)
-          setTotal(data.total)
-        })
-        .catch((err) => setError(String(err)))
-        .finally(() => setLoading(false))
-    }
-  }, [page, searchQuery])
-
-  const handleSearch = (query: string) => {
-    setSearchQuery(query)
-    setPage(0)
-  }
+    listItems(page, 'actionable')
+      .then((data) => {
+        setItems(data.items)
+        setTotal(data.total)
+      })
+      .catch((err) => setError(String(err)))
+      .finally(() => setLoading(false))
+  }, [page])
 
   const limit = 10
   const totalPages = Math.ceil(total / limit)
@@ -44,19 +28,12 @@ export default function ListItems() {
 
   return (
     <section>
-      <h2>Items</h2>
-      <div style={{ marginBottom: 16 }}>
-        <input
-          type="text"
-          placeholder="Search items..."
-          value={searchQuery}
-          onChange={(e) => handleSearch(e.target.value)}
-          style={{ width: '100%' }}
-        />
-      </div>
+      <h2>Actions</h2>
+      <p className="muted">Items marked as actionable.</p>
+      
       {loading && <p>Loading...</p>}
       {error && <p style={{ color: 'salmon' }}>{error}</p>}
-      {!loading && !items.length && <p className="muted">No items found.</p>}
+      {!loading && !items.length && <p className="muted">No actions. All caught up!</p>}
 
       <div className="items-list">
         {items.map((it) => {
@@ -65,10 +42,7 @@ export default function ListItems() {
             : it.description
           return (
             <article key={it.id} className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <h3 style={{ margin: 0 }}>{it.title}</h3>
-                <span style={{ color: '#888', fontSize: '0.9rem' }}>ID: {it.id}</span>
-              </div>
+              <h3>{it.title}</h3>
               <div className="item-meta">{new Date(it.created_at).toLocaleString()}</div>
               {summary && <p className="muted">{summary}</p>}
               {it.file_location && (
@@ -102,6 +76,10 @@ export default function ListItems() {
           </button>
         </div>
       )}
+
+      <p style={{ marginTop: 20 }}>
+        <Link to="/">← Back to Inbox</Link>
+      </p>
     </section>
   )
 }

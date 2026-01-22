@@ -1,7 +1,9 @@
 import { Link, Routes, Route } from 'react-router-dom'
 import './App.css'
 import CreateItem from './pages/CreateItem'
-import ListItems from './pages/ListItems'
+import Inbox from './pages/Inbox'
+import Action from './pages/Action'
+import Save from './pages/Save'
 import UploadDocument from './pages/UploadDocument'
 import ItemDetails from './pages/ItemDetails'
 
@@ -21,12 +23,14 @@ function App() {
           </svg>
           <div>
             <div className="title">My React App</div>
-            <div className="muted">Items • Uploads • Demo</div>
+            <div className="muted">GTD Workflow • Uploads • Demo</div>
           </div>
         </div>
 
         <nav className="nav-links">
-          <Link to="/">List Items</Link>
+          <Link to="/">Inbox</Link>
+          <Link to="/action">Actions</Link>
+          <Link to="/save">Saved</Link>
           <Link to="/create">Create Item</Link>
           <Link to="/upload">Upload Document</Link>
         </nav>
@@ -34,7 +38,9 @@ function App() {
 
       <main className="container">
         <Routes>
-          <Route path="/" element={<ListItems />} />
+          <Route path="/" element={<Inbox />} />
+          <Route path="/action" element={<Action />} />
+          <Route path="/save" element={<Save />} />
           <Route path="/create" element={<CreateItem />} />
           <Route path="/upload" element={<UploadDocument />} />
           <Route path="/items/:id" element={<ItemDetails />} />

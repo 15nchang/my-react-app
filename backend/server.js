@@ -20,13 +20,25 @@ const BACKEND_URL = process.env.BACKEND_URL || ''
 app.get('/api/items', async (req, res) => {
   try {
     const page = parseInt(req.query.page || '0', 10);
+    const category = req.query.category; // optional filter
     const limit = 10;
     const offset = page * limit;
-    const result = await db.query(
-      'SELECT id, title, description, created_at, file_location, processing, status FROM items ORDER BY created_at DESC LIMIT $1 OFFSET $2',
-      [limit, offset]
-    );
-    const countResult = await db.query('SELECT COUNT(*) as total FROM items');
+    
+    let query, countQuery, params, countParams;
+    if (category && typeof category === 'string') {
+      query = 'SELECT id, title, description, created_at, file_location, processing, status, category FROM items WHERE category=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3';
+      params = [category, limit, offset];
+      countQuery = 'SELECT COUNT(*) as total FROM items WHERE category=$1';
+      countParams = [category];
+    } else {
+      query = 'SELECT id, title, description, created_at, file_location, processing, status, category FROM items ORDER BY created_at DESC LIMIT $1 OFFSET $2';
+      params = [limit, offset];
+      countQuery = 'SELECT COUNT(*) as total FROM items';
+      countParams = [];
+    }
+    
+    const result = await db.query(query, params);
+    const countResult = await db.query(countQuery, countParams);
     const total = parseInt(countResult.rows[0].total, 10);
     return res.json({ items: result.rows, total, page, limit });
   } catch (err) {
@@ -159,12 +171,37 @@ app.get('/api/items/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10)
   if (!id) return res.status(400).json({ error: 'Invalid id' })
   try {
-    const result = await db.query('SELECT id, title, description, created_at, file_location, processing, status FROM items WHERE id=$1', [id])
+    const result = await db.query('SELECT id, title, description, created_at, file_location, processing, status, category FROM items WHERE id=$1', [id])
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' })
     return res.json(result.rows[0])
   } catch (err) {
     console.error('GET /api/items/:id error', err)
     return res.status(500).json({ error: 'Failed to fetch item' })
+  }
+})
+
+app.patch('/api/items/:id', async (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const { category } = req.body || {}
+  if (!id) return res.status(400).json({ error: 'Invalid id' })
+  if (!category || typeof category !== 'string') return res.status(400).json({ error: 'Category is required' })
+  
+  const validCategories = ['inbox', 'actionable', 'eliminate', 'incubate', 'file']
+  if (!validCategories.includes(category)) {
+    return res.status(400).json({ error: `Invalid category. Must be one of: ${validCategories.join(', ')}` })
+  }
+
+  try {
+    const result = await db.query('UPDATE items SET category=$1 WHERE id=$2 RETURNING id, title, description, created_at, file_location, processing, status, category', [category, id])
+    if (!result.rows.length) return res.status(404).json({ error: 'Item not found' })
+    
+    const item = result.rows[0]
+    // Update Elasticsearch
+    await es.updateItem(id, { category })
+    return res.json(item)
+  } catch (err) {
+    console.error('PATCH /api/items/:id error', err)
+    return res.status(500).json({ error: 'Failed to update item' })
   }
 })
 const port = process.env.PORT || 4000;
