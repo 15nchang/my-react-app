@@ -54,8 +54,11 @@ export async function getItem(id: number) {
   return res.json()
 }
 
-export async function searchItems(query: string, page: number = 0): Promise<{ items: Item[]; total: number; page: number; limit: number }> {
-  const res = await fetch(`${API_BASE}/api/items/search?q=${encodeURIComponent(query)}&page=${page}`)
+export async function searchItems(query: string, page: number = 0, category?: string): Promise<{ items: Item[]; total: number; page: number; limit: number }> {
+  const url = category 
+    ? `${API_BASE}/api/items/search?q=${encodeURIComponent(query)}&page=${page}&category=${encodeURIComponent(category)}`
+    : `${API_BASE}/api/items/search?q=${encodeURIComponent(query)}&page=${page}`
+  const res = await fetch(url)
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || 'Search failed')
@@ -73,5 +76,11 @@ export async function updateItemCategory(id: number, category: string) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || 'Failed to update category')
   }
+  return res.json()
+}
+
+export async function getItemCounts(): Promise<{ inbox: number; actionable: number; eliminate: number; incubate: number; file: number }> {
+  const res = await fetch(`${API_BASE}/api/items/counts`)
+  if (!res.ok) throw new Error('Failed to fetch counts')
   return res.json()
 }

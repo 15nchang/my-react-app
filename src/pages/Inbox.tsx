@@ -16,10 +16,10 @@ export default function Inbox() {
   useEffect(() => {
     setLoading(true)
     if (searchQuery.trim()) {
-      searchItems(searchQuery, page)
+      searchItems(searchQuery, page, 'inbox')
         .then((data) => {
-          setItems(data.items.filter(i => i.category === 'inbox'))
-          setTotal(data.items.filter(i => i.category === 'inbox').length)
+          setItems(data.items)
+          setTotal(data.total)
         })
         .catch((err) => setError(String(err)))
         .finally(() => setLoading(false))

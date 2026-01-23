@@ -1,4 +1,5 @@
 import { Link, Routes, Route } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import './App.css'
 import CreateItem from './pages/CreateItem'
 import Inbox from './pages/Inbox'
@@ -6,8 +7,29 @@ import Action from './pages/Action'
 import Save from './pages/Save'
 import UploadDocument from './pages/UploadDocument'
 import ItemDetails from './pages/ItemDetails'
+import { getItemCounts } from './api'
 
 function App() {
+  const [counts, setCounts] = useState<{ inbox: number; actionable: number; eliminate: number; incubate: number; file: number } | null>(null)
+
+  useEffect(() => {
+    const fetchCounts = async () => {
+      try {
+        const data = await getItemCounts()
+        setCounts(data)
+      } catch (error) {
+        console.error('Failed to fetch counts:', error)
+      }
+    }
+    fetchCounts()
+    
+    // Refresh counts every 10 seconds
+    const interval = setInterval(fetchCounts, 10000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const savedCount = counts ? counts.eliminate + counts.incubate + counts.file : 0
+
   return (
     <div id="root">
       <header className="app-header">
@@ -28,9 +50,9 @@ function App() {
         </div>
 
         <nav className="nav-links">
-          <Link to="/">Inbox</Link>
-          <Link to="/action">Actions</Link>
-          <Link to="/save">Saved</Link>
+          <Link to="/">Inbox{counts !== null && ` (${counts.inbox})`}</Link>
+          <Link to="/action">Actions{counts !== null && ` (${counts.actionable})`}</Link>
+          <Link to="/save">Saved{counts !== null && ` (${savedCount})`}</Link>
           <Link to="/create">Create Item</Link>
           <Link to="/upload">Upload Document</Link>
         </nav>

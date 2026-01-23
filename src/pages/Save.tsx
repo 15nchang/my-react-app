@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { listItems } from '../api'
+import { listItems, searchItems, updateItemCategory } from '../api'
 import type { Item } from '../api'
 
 export default function Save() {
@@ -10,37 +10,91 @@ export default function Save() {
   const [filter, setFilter] = useState<'all' | 'eliminate' | 'incubate' | 'file'>('all')
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
+  const [restoringId, setRestoringId] = useState<number | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const fetchData = () => {
+    setLoading(true)
+    
+    if (searchQuery.trim()) {
+      // Search with category filter
+      if (filter === 'all') {
+        Promise.all([
+          searchItems(searchQuery, page, 'eliminate'),
+          searchItems(searchQuery, page, 'incubate'),
+          searchItems(searchQuery, page, 'file')
+        ])
+          .then(([eliminate, incubate, file]) => {
+            const allItems = [
+              ...eliminate.items,
+              ...incubate.items,
+              ...file.items
+            ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+            setItems(allItems)
+            setTotal(eliminate.total + incubate.total + file.total)
+          })
+          .catch((err) => setError(String(err)))
+          .finally(() => setLoading(false))
+      } else {
+        searchItems(searchQuery, page, filter)
+          .then((data) => {
+            setItems(data.items)
+            setTotal(data.total)
+          })
+          .catch((err) => setError(String(err)))
+          .finally(() => setLoading(false))
+      }
+    } else {
+      // Regular list without search
+      if (filter === 'all') {
+        Promise.all([
+          listItems(page, 'eliminate'),
+          listItems(page, 'incubate'),
+          listItems(page, 'file')
+        ])
+          .then(([eliminate, incubate, file]) => {
+            const allItems = [
+              ...eliminate.items,
+              ...incubate.items,
+              ...file.items
+            ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+            setItems(allItems)
+            setTotal(eliminate.total + incubate.total + file.total)
+          })
+          .catch((err) => setError(String(err)))
+          .finally(() => setLoading(false))
+      } else {
+        listItems(page, filter)
+          .then((data) => {
+            setItems(data.items)
+            setTotal(data.total)
+          })
+          .catch((err) => setError(String(err)))
+          .finally(() => setLoading(false))
+      }
+    }
+  }
 
   useEffect(() => {
-    setLoading(true)
-    if (filter === 'all') {
-      // Fetch all non-actionable items
-      Promise.all([
-        listItems(page, 'eliminate'),
-        listItems(page, 'incubate'),
-        listItems(page, 'file')
-      ])
-        .then(([eliminate, incubate, file]) => {
-          const allItems = [
-            ...eliminate.items,
-            ...incubate.items,
-            ...file.items
-          ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          setItems(allItems)
-          setTotal(eliminate.total + incubate.total + file.total)
-        })
-        .catch((err) => setError(String(err)))
-        .finally(() => setLoading(false))
-    } else {
-      listItems(page, filter)
-        .then((data) => {
-          setItems(data.items)
-          setTotal(data.total)
-        })
-        .catch((err) => setError(String(err)))
-        .finally(() => setLoading(false))
+    fetchData()
+  }, [page, filter, searchQuery])
+
+  const handleSearch = (query: string) => {
+    setSearchQuery(query)
+    setPage(0)
+  }
+
+  const handleRestore = async (itemId: number) => {
+    setRestoringId(itemId)
+    try {
+      await updateItemCategory(itemId, 'inbox')
+      fetchData()
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setRestoringId(null)
     }
-  }, [page, filter])
+  }
 
   const getCategoryLabel = (category?: string) => {
     switch (category) {
@@ -64,6 +118,23 @@ export default function Save() {
     <section>
       <h2>Saved Items</h2>
       <p className="muted">Items marked as eliminate, incubate, or file.</p>
+
+      <div style={{ marginBottom: 16 }}>
+        <input
+          type="text"
+          placeholder="Search saved items..."
+          value={searchQuery}
+          onChange={(e) => handleSearch(e.target.value)}
+          style={{ 
+            width: '100%', 
+            padding: '8px 12px', 
+            fontSize: '0.95rem',
+            border: '1px solid #ddd',
+            borderRadius: '6px',
+            marginBottom: '16px'
+          }}
+        />
+      </div>
 
       <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button
@@ -121,6 +192,21 @@ export default function Save() {
                     </p>
                   )}
                 </div>
+                {it.category === 'eliminate' && (
+                  <button
+                    onClick={() => handleRestore(it.id)}
+                    disabled={restoringId === it.id}
+                    className="btn secondary"
+                    style={{ 
+                      marginLeft: 12,
+                      fontSize: '0.85rem',
+                      padding: '6px 12px',
+                      opacity: restoringId === it.id ? 0.5 : 1
+                    }}
+                  >
+                    {restoringId === it.id ? 'Restoring...' : '↺ Restore to Inbox'}
+                  </button>
+                )}
               </div>
             </article>
           )

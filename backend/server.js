@@ -47,8 +47,36 @@ app.get('/api/items', async (req, res) => {
   }
 });
 
+app.get('/api/items/counts', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT category, COUNT(*) as count
+      FROM items
+      WHERE category IN ('inbox', 'actionable', 'eliminate', 'incubate', 'file')
+      GROUP BY category
+    `);
+    
+    const counts = {
+      inbox: 0,
+      actionable: 0,
+      eliminate: 0,
+      incubate: 0,
+      file: 0
+    };
+    
+    result.rows.forEach(row => {
+      counts[row.category] = parseInt(row.count, 10);
+    });
+    
+    return res.json(counts);
+  } catch (err) {
+    console.error('GET /api/items/counts error', err);
+    return res.status(500).json({ error: 'Failed to fetch counts' });
+  }
+});
+
 app.get('/api/items/search', async (req, res) => {
-  const { q, page } = req.query;
+  const { q, page, category } = req.query;
   if (!q || typeof q !== 'string') {
     return res.status(400).json({ error: 'Query parameter "q" is required' });
   }
@@ -57,8 +85,8 @@ app.get('/api/items/search', async (req, res) => {
     const pageNum = parseInt(page || '0', 10);
     const limit = 10;
     
-    // Use Elasticsearch for search
-    const { items, total } = await es.searchItems(query, pageNum, limit);
+    // Use Elasticsearch for search with optional category filter
+    const { items, total } = await es.searchItems(query, pageNum, limit, category || null);
     return res.json({ items, total, page: pageNum, limit });
   } catch (err) {
     console.error('GET /api/items/search error', err);

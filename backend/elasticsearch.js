@@ -76,18 +76,34 @@ async function updateItem(id, updates) {
   }
 }
 
-async function searchItems(query, page = 0, limit = 10) {
+async function searchItems(query, page = 0, limit = 10, category = null) {
   try {
-    // Search by content only
-    const searchQuery = {
-      bool: {
-        should: [
-          { match: { title: { query, fuzziness: 'AUTO', boost: 2 } } },
-          { match: { description: { query, fuzziness: 'AUTO' } } }
-        ],
-        minimum_should_match: 1
-      }
-    };
+    // Build search query
+    const mustClauses = [];
+    
+    // Text search
+    if (query && query.trim()) {
+      mustClauses.push({
+        bool: {
+          should: [
+            { match: { title: { query, fuzziness: 'AUTO', boost: 2 } } },
+            { match: { description: { query, fuzziness: 'AUTO' } } }
+          ],
+          minimum_should_match: 1
+        }
+      });
+    }
+    
+    // Category filter
+    if (category && typeof category === 'string') {
+      mustClauses.push({
+        term: { category }
+      });
+    }
+
+    const searchQuery = mustClauses.length > 0 
+      ? { bool: { must: mustClauses } }
+      : { match_all: {} };
 
     const result = await client.search({
       index: INDEX_NAME,
@@ -97,7 +113,7 @@ async function searchItems(query, page = 0, limit = 10) {
       sort: [{ created_at: { order: 'desc' } }]
     });
 
-    console.log(`✓ Search "${query}" found ${result.hits.total.value} results`);
+    console.log(`✓ Search "${query}" (category: ${category || 'all'}) found ${result.hits.total.value} results`);
     return {
       items: result.hits.hits.map(hit => hit._source),
       total: result.hits.total.value

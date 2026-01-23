@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { listItems } from '../api'
+import { listItems, searchItems } from '../api'
 import type { Item } from '../api'
 
 export default function Action() {
@@ -9,17 +9,33 @@ export default function Action() {
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     setLoading(true)
-    listItems(page, 'actionable')
-      .then((data) => {
-        setItems(data.items)
-        setTotal(data.total)
-      })
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false))
-  }, [page])
+    if (searchQuery.trim()) {
+      searchItems(searchQuery, page, 'actionable')
+        .then((data) => {
+          setItems(data.items)
+          setTotal(data.total)
+        })
+        .catch((err) => setError(String(err)))
+        .finally(() => setLoading(false))
+    } else {
+      listItems(page, 'actionable')
+        .then((data) => {
+          setItems(data.items)
+          setTotal(data.total)
+        })
+        .catch((err) => setError(String(err)))
+        .finally(() => setLoading(false))
+    }
+  }, [page, searchQuery])
+
+  const handleSearch = (query: string) => {
+    setSearchQuery(query)
+    setPage(0)
+  }
 
   const limit = 10
   const totalPages = Math.ceil(total / limit)
@@ -30,6 +46,22 @@ export default function Action() {
     <section>
       <h2>Actions</h2>
       <p className="muted">Items marked as actionable.</p>
+      
+      <div style={{ marginBottom: 16 }}>
+        <input
+          type="text"
+          placeholder="Search actions..."
+          value={searchQuery}
+          onChange={(e) => handleSearch(e.target.value)}
+          style={{ 
+            width: '100%', 
+            padding: '8px 12px', 
+            fontSize: '0.95rem',
+            border: '1px solid #ddd',
+            borderRadius: '6px'
+          }}
+        />
+      </div>
       
       {loading && <p>Loading...</p>}
       {error && <p style={{ color: 'salmon' }}>{error}</p>}
