@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { listItems, searchItems, updateItemCategory } from '../api'
+import { listItems, searchItems, updateItemCategory, updateItemFields } from '../api'
 import type { Item } from '../api'
 
 export default function Save() {
@@ -12,6 +12,7 @@ export default function Save() {
   const [total, setTotal] = useState(0)
   const [restoringId, setRestoringId] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [tagInputs, setTagInputs] = useState<Record<number, string>>({})
 
   const fetchData = () => {
     setLoading(true)
@@ -82,6 +83,34 @@ export default function Save() {
   const handleSearch = (query: string) => {
     setSearchQuery(query)
     setPage(0)
+  }
+
+  const handleAddTags = async (item: Item) => {
+    const raw = (tagInputs[item.id] || '').trim()
+    if (!raw) return
+    const newTags = raw.split(',').map(t => t.trim()).filter(Boolean)
+    if (!newTags.length) return
+
+    const existing = item.tags || []
+    const merged = Array.from(new Set([...existing, ...newTags]))
+    try {
+      await updateItemFields(item.id, { tags: merged })
+      setItems(prev => prev.map(x => x.id === item.id ? { ...x, tags: merged } : x))
+      setTagInputs(prev => ({ ...prev, [item.id]: '' }))
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
+  const handleRemoveTag = async (item: Item, tag: string) => {
+    const existing = item.tags || []
+    const next = existing.filter(t => t !== tag)
+    try {
+      await updateItemFields(item.id, { tags: next })
+      setItems(prev => prev.map(x => x.id === item.id ? { ...x, tags: next } : x))
+    } catch (err) {
+      setError(String(err))
+    }
   }
 
   const handleRestore = async (itemId: number) => {
@@ -192,21 +221,58 @@ export default function Save() {
                     </p>
                   )}
                 </div>
-                {it.category === 'eliminate' && (
-                  <button
-                    onClick={() => handleRestore(it.id)}
-                    disabled={restoringId === it.id}
-                    className="btn secondary"
-                    style={{ 
-                      marginLeft: 12,
-                      fontSize: '0.85rem',
-                      padding: '6px 12px',
-                      opacity: restoringId === it.id ? 0.5 : 1
-                    }}
-                  >
-                    {restoringId === it.id ? 'Restoring...' : '↺ Restore to Inbox'}
-                  </button>
-                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginLeft: 12, minWidth: 220 }}>
+                  {it.category === 'eliminate' && (
+                    <button
+                      onClick={() => handleRestore(it.id)}
+                      disabled={restoringId === it.id}
+                      className="btn secondary"
+                      style={{ 
+                        fontSize: '0.85rem',
+                        padding: '6px 12px',
+                        opacity: restoringId === it.id ? 0.5 : 1
+                      }}
+                    >
+                      {restoringId === it.id ? 'Restoring...' : '↺ Restore to Inbox'}
+                    </button>
+                  )}
+
+                  {it.category === 'file' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {(it.tags || []).map(tag => (
+                          <span key={tag} style={{ background: '#eef2ff', color: '#4f46e5', padding: '4px 8px', borderRadius: 999, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {tag}
+                            <button
+                              onClick={() => handleRemoveTag(it, tag)}
+                              style={{ border: 'none', background: 'transparent', color: '#4f46e5', cursor: 'pointer', fontSize: '0.85rem', padding: 0 }}
+                              aria-label={`Remove tag ${tag}`}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                        {!(it.tags && it.tags.length) && <span className="muted" style={{ fontSize: '0.8rem' }}>No tags</span>}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input
+                          type="text"
+                          placeholder="Add tags (comma separated)"
+                          value={tagInputs[it.id] || ''}
+                          onChange={(e) => setTagInputs(prev => ({ ...prev, [it.id]: e.target.value }))}
+                          style={{ flex: 1, padding: '6px 8px', fontSize: '0.9rem', border: '1px solid #ddd', borderRadius: '6px' }}
+                        />
+                        <button
+                          className="btn secondary"
+                          style={{ fontSize: '0.85rem', padding: '6px 10px' }}
+                          onClick={() => handleAddTags(it)}
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </article>
           )

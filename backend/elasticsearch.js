@@ -24,7 +24,10 @@ async function initIndex() {
               file_location: { type: 'keyword' },
               processing: { type: 'boolean' },
               status: { type: 'keyword' },
-              category: { type: 'keyword' }
+              category: { type: 'keyword' },
+              due_date: { type: 'date' },
+              done: { type: 'boolean' },
+              tags: { type: 'keyword' }
             }
           }
         }
@@ -52,7 +55,10 @@ async function indexItem(item) {
         file_location: item.file_location || null,
         processing: item.processing || false,
         status: item.status || null,
-        category: item.category || 'inbox'
+        category: item.category || 'inbox',
+        due_date: item.due_date || null,
+        done: item.done || false,
+        tags: item.tags || []
       }
     });
     await client.indices.refresh({ index: INDEX_NAME });
@@ -76,7 +82,7 @@ async function updateItem(id, updates) {
   }
 }
 
-async function searchItems(query, page = 0, limit = 10, category = null) {
+async function searchItems(query, page = 0, limit = 10, category = null, tags = []) {
   try {
     // Build search query
     const mustClauses = [];
@@ -98,6 +104,12 @@ async function searchItems(query, page = 0, limit = 10, category = null) {
     if (category && typeof category === 'string') {
       mustClauses.push({
         term: { category }
+      });
+    }
+
+    if (tags && Array.isArray(tags) && tags.length) {
+      tags.forEach((tag) => {
+        mustClauses.push({ term: { tags: tag } });
       });
     }
 

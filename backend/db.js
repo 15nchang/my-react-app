@@ -23,6 +23,11 @@ async function init() {
   await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS status TEXT`);
   // ensure category column for GTD workflow (inbox, actionable, action, garbage, incubate, reference)
   await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'inbox'`);
+  // ensure action tracking columns
+  await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS due_date TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS done BOOLEAN DEFAULT false`);
+  // ensure tags column
+  await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}'`);
 }
 
 init().catch((err) => console.error('DB init error', err));

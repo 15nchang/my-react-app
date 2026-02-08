@@ -6,16 +6,21 @@ export type Item = {
   processing?: boolean
   status?: string | null
   category?: string
+  tags?: string[]
+  due_date?: string | null
+  done?: boolean
   created_at: string
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 
-export async function listItems(page: number = 0, category?: string): Promise<{ items: Item[]; total: number; page: number; limit: number }> {
-  const url = category 
-    ? `${API_BASE}/api/items?page=${page}&category=${encodeURIComponent(category)}`
-    : `${API_BASE}/api/items?page=${page}`
-  const res = await fetch(url)
+export async function listItems(page: number = 0, category?: string, tags?: string[]): Promise<{ items: Item[]; total: number; page: number; limit: number }> {
+  const params = new URLSearchParams()
+  params.set('page', String(page))
+  if (category) params.set('category', category)
+  if (tags && tags.length) params.set('tags', tags.join(','))
+
+  const res = await fetch(`${API_BASE}/api/items?${params.toString()}`)
   if (!res.ok) throw new Error('Failed to fetch items')
   return res.json()
 }
@@ -54,11 +59,14 @@ export async function getItem(id: number) {
   return res.json()
 }
 
-export async function searchItems(query: string, page: number = 0, category?: string): Promise<{ items: Item[]; total: number; page: number; limit: number }> {
-  const url = category 
-    ? `${API_BASE}/api/items/search?q=${encodeURIComponent(query)}&page=${page}&category=${encodeURIComponent(category)}`
-    : `${API_BASE}/api/items/search?q=${encodeURIComponent(query)}&page=${page}`
-  const res = await fetch(url)
+export async function searchItems(query: string, page: number = 0, category?: string, tags?: string[]): Promise<{ items: Item[]; total: number; page: number; limit: number }> {
+  const params = new URLSearchParams()
+  if (query) params.set('q', query)
+  params.set('page', String(page))
+  if (category) params.set('category', category)
+  if (tags && tags.length) params.set('tags', tags.join(','))
+
+  const res = await fetch(`${API_BASE}/api/items/search?${params.toString()}`)
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || 'Search failed')
@@ -82,5 +90,21 @@ export async function updateItemCategory(id: number, category: string) {
 export async function getItemCounts(): Promise<{ inbox: number; actionable: number; eliminate: number; incubate: number; file: number }> {
   const res = await fetch(`${API_BASE}/api/items/counts`)
   if (!res.ok) throw new Error('Failed to fetch counts')
+  return res.json()
+}
+
+export async function updateItemFields(
+  id: number,
+  payload: { category?: string; due_date?: string | null; done?: boolean; tags?: string[] }
+) {
+  const res = await fetch(`${API_BASE}/api/items/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to update item')
+  }
   return res.json()
 }

@@ -8,6 +8,12 @@ const axios = require('axios');
 const db = require('./db');
 const es = require('./elasticsearch');
 
+function parseTagsParam(input) {
+  if (!input) return [];
+  const raw = Array.isArray(input) ? input.join(',') : String(input);
+  return raw.split(',').map((t) => t.trim()).filter(Boolean);
+}
+
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json());
@@ -21,21 +27,30 @@ app.get('/api/items', async (req, res) => {
   try {
     const page = parseInt(req.query.page || '0', 10);
     const category = req.query.category; // optional filter
+    const tags = parseTagsParam(req.query.tags);
     const limit = 10;
     const offset = page * limit;
     
-    let query, countQuery, params, countParams;
+    const whereClauses = [];
+    const params = [];
+
     if (category && typeof category === 'string') {
-      query = 'SELECT id, title, description, created_at, file_location, processing, status, category FROM items WHERE category=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3';
-      params = [category, limit, offset];
-      countQuery = 'SELECT COUNT(*) as total FROM items WHERE category=$1';
-      countParams = [category];
-    } else {
-      query = 'SELECT id, title, description, created_at, file_location, processing, status, category FROM items ORDER BY created_at DESC LIMIT $1 OFFSET $2';
-      params = [limit, offset];
-      countQuery = 'SELECT COUNT(*) as total FROM items';
-      countParams = [];
+      params.push(category);
+      whereClauses.push(`category=$${params.length}`);
     }
+
+    if (tags.length) {
+      params.push(tags);
+      whereClauses.push(`tags && $${params.length}`);
+    }
+
+    const where = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    params.push(limit, offset);
+    const query = `SELECT id, title, description, created_at, file_location, processing, status, category, due_date, done, tags FROM items ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+
+    const countParams = params.slice(0, whereClauses.length);
+    const countQuery = `SELECT COUNT(*) as total FROM items ${where}`;
     
     const result = await db.query(query, params);
     const countResult = await db.query(countQuery, countParams);
@@ -50,24 +65,24 @@ app.get('/api/items', async (req, res) => {
 app.get('/api/items/counts', async (req, res) => {
   try {
     const result = await db.query(`
-      SELECT category, COUNT(*) as count
+      SELECT 
+        COALESCE(SUM(CASE WHEN category='inbox' THEN 1 ELSE 0 END), 0) AS inbox,
+        COALESCE(SUM(CASE WHEN category='actionable' AND COALESCE(done, false)=false THEN 1 ELSE 0 END), 0) AS actionable,
+        COALESCE(SUM(CASE WHEN category='eliminate' THEN 1 ELSE 0 END), 0) AS eliminate,
+        COALESCE(SUM(CASE WHEN category='incubate' THEN 1 ELSE 0 END), 0) AS incubate,
+        COALESCE(SUM(CASE WHEN category='file' THEN 1 ELSE 0 END), 0) AS file
       FROM items
-      WHERE category IN ('inbox', 'actionable', 'eliminate', 'incubate', 'file')
-      GROUP BY category
     `);
-    
+
+    const row = result.rows[0] || {};
     const counts = {
-      inbox: 0,
-      actionable: 0,
-      eliminate: 0,
-      incubate: 0,
-      file: 0
+      inbox: parseInt(row.inbox || 0, 10),
+      actionable: parseInt(row.actionable || 0, 10),
+      eliminate: parseInt(row.eliminate || 0, 10),
+      incubate: parseInt(row.incubate || 0, 10),
+      file: parseInt(row.file || 0, 10)
     };
-    
-    result.rows.forEach(row => {
-      counts[row.category] = parseInt(row.count, 10);
-    });
-    
+
     return res.json(counts);
   } catch (err) {
     console.error('GET /api/items/counts error', err);
@@ -77,16 +92,18 @@ app.get('/api/items/counts', async (req, res) => {
 
 app.get('/api/items/search', async (req, res) => {
   const { q, page, category } = req.query;
-  if (!q || typeof q !== 'string') {
-    return res.status(400).json({ error: 'Query parameter "q" is required' });
+  const tags = parseTagsParam(req.query.tags);
+  const hasQuery = typeof q === 'string' && q.trim();
+  if (!hasQuery && !tags.length) {
+    return res.status(400).json({ error: 'Query or tags parameter is required' });
   }
   try {
-    const query = q.trim();
+    const query = hasQuery ? q.trim() : '';
     const pageNum = parseInt(page || '0', 10);
     const limit = 10;
     
     // Use Elasticsearch for search with optional category filter
-    const { items, total } = await es.searchItems(query, pageNum, limit, category || null);
+    const { items, total } = await es.searchItems(query, pageNum, limit, category || null, tags);
     return res.json({ items, total, page: pageNum, limit });
   } catch (err) {
     console.error('GET /api/items/search error', err);
@@ -199,7 +216,7 @@ app.get('/api/items/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10)
   if (!id) return res.status(400).json({ error: 'Invalid id' })
   try {
-    const result = await db.query('SELECT id, title, description, created_at, file_location, processing, status, category FROM items WHERE id=$1', [id])
+    const result = await db.query('SELECT id, title, description, created_at, file_location, processing, status, category, due_date, done, tags FROM items WHERE id=$1', [id])
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' })
     return res.json(result.rows[0])
   } catch (err) {
@@ -210,22 +227,60 @@ app.get('/api/items/:id', async (req, res) => {
 
 app.patch('/api/items/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10)
-  const { category } = req.body || {}
+  const { category, due_date, done, tags } = req.body || {}
   if (!id) return res.status(400).json({ error: 'Invalid id' })
-  if (!category || typeof category !== 'string') return res.status(400).json({ error: 'Category is required' })
-  
-  const validCategories = ['inbox', 'actionable', 'eliminate', 'incubate', 'file']
-  if (!validCategories.includes(category)) {
-    return res.status(400).json({ error: `Invalid category. Must be one of: ${validCategories.join(', ')}` })
+
+  // Validate optional fields
+  let updates = []
+  let params = []
+
+  if (category !== undefined) {
+    if (typeof category !== 'string') return res.status(400).json({ error: 'Category must be a string' })
+    const validCategories = ['inbox', 'actionable', 'eliminate', 'incubate', 'file']
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({ error: `Invalid category. Must be one of: ${validCategories.join(', ')}` })
+    }
+    updates.push('category=$' + (params.length + 1))
+    params.push(category)
   }
 
+  if (due_date !== undefined) {
+    const dateVal = due_date ? new Date(due_date) : null
+    if (due_date && isNaN(dateVal.getTime())) return res.status(400).json({ error: 'Invalid due_date format' })
+    updates.push('due_date=$' + (params.length + 1))
+    params.push(due_date ? dateVal.toISOString() : null)
+  }
+
+  if (done !== undefined) {
+    if (typeof done !== 'boolean') return res.status(400).json({ error: 'Done must be a boolean' })
+    updates.push('done=$' + (params.length + 1))
+    params.push(done)
+  }
+
+  if (tags !== undefined) {
+    if (!Array.isArray(tags)) return res.status(400).json({ error: 'Tags must be an array of strings' })
+    const sanitized = tags.map(t => String(t).trim()).filter(Boolean)
+    updates.push('tags=$' + (params.length + 1))
+    params.push(sanitized)
+  }
+
+  if (!updates.length) return res.status(400).json({ error: 'No valid fields to update' })
+
   try {
-    const result = await db.query('UPDATE items SET category=$1 WHERE id=$2 RETURNING id, title, description, created_at, file_location, processing, status, category', [category, id])
+    const result = await db.query(
+      `UPDATE items SET ${updates.join(', ')} WHERE id=$${params.length + 1} RETURNING id, title, description, created_at, file_location, processing, status, category, due_date, done, tags`,
+      [...params, id]
+    )
     if (!result.rows.length) return res.status(404).json({ error: 'Item not found' })
-    
+
     const item = result.rows[0]
-    // Update Elasticsearch
-    await es.updateItem(id, { category })
+    // Update Elasticsearch with provided fields
+    const esUpdates = {}
+    if (category !== undefined) esUpdates.category = category
+    if (due_date !== undefined) esUpdates.due_date = item.due_date || null
+    if (done !== undefined) esUpdates.done = done
+    if (tags !== undefined) esUpdates.tags = item.tags || []
+    await es.updateItem(id, esUpdates)
     return res.json(item)
   } catch (err) {
     console.error('PATCH /api/items/:id error', err)
